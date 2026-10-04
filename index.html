@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Slate</title>
+<style>
+:root{
+  --bg:#f6f5f3; --bg-dot:#d7d4cd; --ink:#1c1c1a; --panel:#ffffffee; --panel-border:#e4e2dd;
+  --accent:#3a6ff0; --muted:#8a877f; --shadow:0 10px 30px -8px rgba(0,0,0,.18),0 2px 8px -2px rgba(0,0,0,.08);
+}
+:root[data-theme="dark"]{
+  --bg:#17181a; --bg-dot:#2c2e31; --ink:#eeece7; --panel:#232427ee; --panel-border:#34363a;
+  --accent:#6d9bff; --muted:#8d9096; --shadow:0 10px 30px -8px rgba(0,0,0,.5),0 2px 8px -2px rgba(0,0,0,.3);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#17181a; --bg-dot:#2c2e31; --ink:#eeece7; --panel:#232427ee; --panel-border:#34363a;
+    --accent:#6d9bff; --muted:#8d9096; --shadow:0 10px 30px -8px rgba(0,0,0,.5),0 2px 8px -2px rgba(0,0,0,.3);
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none;background:var(--bg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;color:var(--ink);}
+body{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+#stage{position:fixed;inset:0;touch-action:none;}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+#stage.drawing, #stage.drawing canvas{cursor:none;}
+
+/* ---- toolbar ---- */
+#toolbar{position:fixed;z-index:50;display:flex;align-items:center;gap:2px;padding:6px;
+  background:var(--panel);border:1px solid var(--panel-border);border-radius:16px;box-shadow:var(--shadow);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  transition:box-shadow .2s,transform .15s;touch-action:none;user-select:none;}
+#toolbar.dragging{transform:scale(1.02);}
+#toolbar .grip{width:14px;height:28px;display:flex;align-items:center;justify-content:center;cursor:grab;
+  color:var(--muted);margin-right:2px;}
+#toolbar .grip:active{cursor:grabbing;}
+#toolbar .sep{width:1px;height:22px;background:var(--panel-border);margin:0 4px;flex:none;}
+.tbtn{position:relative;width:38px;height:38px;border:none;background:transparent;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;color:var(--ink);cursor:pointer;flex:none;
+  transition:background .12s,color .12s,transform .1s;}
+.tbtn svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+.tbtn:hover{background:rgba(128,128,128,.14);}
+.tbtn:active{transform:scale(.92);}
+.tbtn.active{background:var(--accent);color:#fff;}
+.tbtn:disabled{opacity:.32;pointer-events:none;}
+#btn-record svg{fill:#e0413b;stroke:none;}
+#btn-record.recording{background:#e0413b;color:#fff;}
+#btn-record.recording svg{fill:#fff;animation:pulse 1.1s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.45;transform:scale(.8);}}
+#rec-timer{position:fixed;z-index:55;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);
+  display:none;align-items:center;gap:7px;background:#e0413b;color:#fff;font-size:12px;font-weight:600;
+  padding:6px 12px;border-radius:20px;box-shadow:var(--shadow);letter-spacing:.02em;}
+#rec-timer.show{display:flex;}
+#rec-timer .rdot{width:7px;height:7px;border-radius:50%;background:#fff;animation:pulse 1.1s ease-in-out infinite;}
+.tbtn .dot{position:absolute;bottom:5px;left:50%;width:4px;height:4px;border-radius:50%;background:currentColor;transform:translateX(-50%);}
+
+/* orientation toggles when docked on left/right edges */
+#toolbar.vertical{flex-direction:column;}
+#toolbar.vertical .sep{width:22px;height:1px;margin:4px 0;}
+#toolbar.vertical .grip{width:28px;height:14px;margin:0 0 2px 0;}
+
+/* ---- popovers ---- */
+.pop{position:fixed;z-index:60;background:var(--panel);border:1px solid var(--panel-border);
+  border-radius:14px;box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  padding:12px;opacity:0;transform:translateY(6px) scale(.97);pointer-events:none;transition:opacity .14s,transform .14s;}
+.pop.open{opacity:1;transform:translateY(0) scale(1);pointer-events:auto;}
+.pop-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.pop-row:last-child{margin-bottom:0;}
+.pop label{font-size:11.5px;color:var(--muted);width:56px;flex:none;}
+.swatch{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer;flex:none;}
+.swatch.sel{border-color:var(--accent);}
+.swatch-row{display:flex;gap:7px;}
+.sizebtn{width:26px;height:26px;border-radius:50%;border:1px solid var(--panel-border);background:transparent;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex:none;}
+.sizebtn .b{border-radius:50%;background:var(--ink);}
+.sizebtn.sel{border-color:var(--accent);background:rgba(58,111,240,.1);}
+input[type=range]{width:100px;accent-color:var(--accent);}
+input[type=color]{width:26px;height:26px;border:1px solid var(--panel-border);border-radius:7px;padding:0;background:none;cursor:pointer;flex:none;}
+.pop-title{font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px;letter-spacing:.02em;}
+.bgswatch{width:34px;height:34px;border-radius:9px;border:2px solid transparent;cursor:pointer;flex:none;background-size:14px 14px;}
+.bgswatch.sel{border-color:var(--accent);}
+.zoomlabel{font-size:11px;color:var(--muted);width:40px;text-align:center;flex:none;user-select:none;}
+.mini{font-size:11px;padding:5px 9px;border-radius:8px;border:1px solid var(--panel-border);background:transparent;color:var(--ink);cursor:pointer;}
+.mini:hover{background:rgba(128,128,128,.14);}
+.toggle{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);cursor:pointer;}
+.hint{position:fixed;bottom:calc(18px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);
+  font-size:11.5px;color:var(--muted);background:var(--panel);border:1px solid var(--panel-border);
+  padding:6px 12px;border-radius:20px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:45;
+  backdrop-filter:blur(10px);}
+.hint.show{opacity:1;}
+#ctx-menu{position:fixed;z-index:70;background:var(--panel);border:1px solid var(--panel-border);
+  border-radius:12px;box-shadow:var(--shadow);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  padding:5px;opacity:0;transform:scale(.96);pointer-events:none;transition:opacity .12s,transform .12s;min-width:150px;}
+#ctx-menu.open{opacity:1;transform:scale(1);pointer-events:auto;}
+#ctx-menu button{display:flex;align-items:center;gap:9px;width:100%;background:none;border:none;text-align:left;
+  font-size:13px;color:var(--ink);padding:8px 10px;border-radius:8px;cursor:pointer;}
+#ctx-menu button:hover:not(:disabled){background:rgba(128,128,128,.14);}
+#ctx-menu button:disabled{opacity:.35;cursor:default;}
+#ctx-menu button svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;flex:none;}
+#ctx-menu .ctx-sep{height:1px;background:var(--panel-border);margin:4px 6px;}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="grid"></canvas>
+  <canvas id="draw"></canvas>
+</div>
+<div class="hint" id="hint"></div>
+<div id="rec-timer"><span class="rdot"></span><span id="rec-time">0:00</span></div>
+
+<div id="ctx-menu">
+  <button id="ctx-copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</button>
+  <button id="ctx-paste"><svg viewBox="0 0 24 24"><rect x="8" y="4" width="12" height="16" rx="2"/><path d="M12 2h4v2h-4z"/></svg>Paste</button>
+  <div class="ctx-sep"></div>
+  <button id="ctx-group"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/><path d="M11 7h6a2 2 0 0 1 2 2v4M13 17H7a2 2 0 0 1-2-2V9"/></svg>Group</button>
+  <button id="ctx-ungroup"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Ungroup</button>
+  <div class="ctx-sep"></div>
+  <button id="ctx-delete"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>Delete</button>
+</div>
+
+<div id="toolbar">
+  <div class="grip" id="grip" title="Drag to move">
+    <svg width="10" height="16" viewBox="0 0 10 16"><circle cx="2" cy="2" r="1.3" fill="currentColor" stroke="none"/><circle cx="8" cy="2" r="1.3" fill="currentColor" stroke="none"/><circle cx="2" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="2" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="8" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg>
+  </div>
+
+  <button class="tbtn active" data-tool="pen" id="btn-pen" title="Pen (P)">
+    <svg viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+    <span class="dot" id="pen-dot"></span>
+  </button>
+  <button class="tbtn" data-tool="eraser" id="btn-eraser" title="Eraser (E)">
+    <svg viewBox="0 0 24 24"><path d="M20 20H8.5L3 14.5a1 1 0 0 1 0-1.5L13 3l8 8-9.5 9.5"/><path d="M13 3l8 8"/></svg>
+  </button>
+  <button class="tbtn" data-tool="select" id="btn-select" title="Select (V)">
+    <svg viewBox="0 0 24 24"><path d="M4 3l6 17 2.5-7 7-2.5z"/></svg>
+  </button>
+  <button class="tbtn" data-tool="hand" id="btn-hand" title="Pan (H / Space)">
+    <svg viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M11 11.5V4a1.5 1.5 0 0 1 3 0v8"/><path d="M14 12V5.5a1.5 1.5 0 0 1 3 0V13"/><path d="M17 12.5V9a1.5 1.5 0 0 1 3 0v6c0 4-2.5 7-6.5 7h-2c-3 0-4.5-1-6-3l-3-4.5c-.5-1 0-2 1-2.3.8-.2 1.6.1 2.1.8L7 15"/></svg>
+  </button>
+
+  <div class="sep"></div>
+
+  <button class="tbtn" id="btn-undo" title="Undo (⌘Z)">
+    <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/></svg>
+  </button>
+  <button class="tbtn" id="btn-redo" title="Redo (⌘⇧Z)">
+    <svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h2"/></svg>
+  </button>
+
+  <div class="sep"></div>
+
+  <button class="tbtn" id="btn-zoomout" title="Zoom out (-)">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg>
+  </button>
+  <button class="tbtn" id="btn-zoomlabel" title="Reset zoom (0)"><span class="zoomlabel" id="zoomval">100%</span></button>
+  <button class="tbtn" id="btn-zoomin" title="Zoom in (+)">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
+  </button>
+  <button class="tbtn" id="btn-panx" title="Horizontal pan: locked (click to unlock)">
+    <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+  </button>
+
+  <div class="sep"></div>
+
+  <button class="tbtn" id="btn-record" title="Record screen (R)">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
+  </button>
+
+  <div class="sep"></div>
+
+  <button class="tbtn" id="btn-bg" title="Background & settings">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</div>
+
+<!-- pen options popover -->
+<div class="pop" id="pop-pen">
+  <div class="pop-title">Stroke</div>
+  <div class="pop-row">
+    <label>Color</label>
+    <div class="swatch-row" id="pen-colors"></div>
+  </div>
+  <div class="pop-row">
+    <label>Size</label>
+    <div class="swatch-row" id="pen-sizes"></div>
+  </div>
+  <div class="pop-row">
+    <label>Opacity</label>
+    <input type="range" id="pen-opacity" min="10" max="100" value="100">
+  </div>
+</div>
+
+<!-- eraser options popover -->
+<div class="pop" id="pop-eraser">
+  <div class="pop-title">Eraser size</div>
+  <div class="pop-row"><div class="swatch-row" id="eraser-sizes"></div></div>
+</div>
+
+<!-- background / settings popover -->
+<div class="pop" id="pop-bg">
+  <div class="pop-title">Canvas</div>
+  <div class="pop-row">
+    <label>Style</label>
+    <div class="swatch-row" id="bg-styles"></div>
+  </div>
+  <div class="pop-row">
+    <label>Background</label>
+    <input type="color" id="bg-color-picker" value="#f6f5f3">
+    <label>Lines</label>
+    <input type="color" id="line-color-picker" value="#d7d4cd">
+    <button class="mini" id="btn-bg-reset">Reset</button>
+  </div>
+  <div class="pop-row">
+    <label>Theme</label>
+    <div class="swatch-row" id="theme-btns">
+      <button class="mini" data-theme="light">Light</button>
+      <button class="mini" data-theme="dark">Dark</button>
+    </div>
+  </div>
+  <div class="pop-row">
+    <label></label>
+    <button class="mini" id="btn-clear">Clear canvas</button>
+  </div>
+</div>
+
+<script>
+(() => {
+const gridCanvas = document.getElementById('grid');
+const canvas = document.getElementById('draw');
+const gctx = gridCanvas.getContext('2d');
+const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
+const toolbar = document.getElementById('toolbar');
+const hint = document.getElementById('hint');
+let DPR = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+
+// ---------- state ----------
+const state = {
+  tool: 'pen',
+  pan: {x:0, y:0}, zoom: 1,
+  penColor: '#e0413b', penSize: 3, penOpacity: 100,
+  eraserSize: 24,
+  bgStyle: 'dot', bgColor: null, lineColor: null,
+  panLockX: true,   // horizontal panning locked by default — vertical pan always allowed
+  strokes: [],       // {id, tool, color, size, opacity, points:[{x,y,p}], path:Path2D, bbox, groupId}
+  selection: [],
+  clipboard: [],
+  undoStack: [], redoStack: [],
+};
+let idCounter = 1, groupCounter = 1;
+
+const PEN_COLORS = ['#1c1c1a','#e0413b','#e8952f','#2f9e50','#3a6ff0','#8b5cf6'];
+const PEN_SIZES = [1.5, 3, 5, 8];
+const ERASER_SIZES = [16, 28, 44, 70];
+
+function resize(){
+  DPR = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+  for(const c of [gridCanvas, canvas]){
+    c.width = innerWidth * DPR; c.height = innerHeight * DPR;
+  }
+  drawGrid(); render();
+}
+
+function screenToWorld(x,y){ return {x: (x - state.pan.x)/state.zoom, y: (y - state.pan.y)/state.zoom}; }
+
+function applyTransform(context){
+  context.setTransform(DPR*state.zoom,0,0,DPR*state.zoom, DPR*state.pan.x, DPR*state.pan.y);
+}
+
+// ---------- background ----------
+function isDark(){
+  const t = document.documentElement.getAttribute('data-theme');
+  if(t === 'dark') return true;
+  if(t === 'light') return false;
+  return matchMedia('(prefers-color-scheme: dark)').matches;
+}
+// Theme colours are read once (not with getComputedStyle inside render/record loops).
+const THEME = {bg:'#f6f5f3', dot:'#d7d4cd', accent:'#3a6ff0'};
+function refreshTheme(){
+  const cs = getComputedStyle(document.documentElement);
+  THEME.bg = cs.getPropertyValue('--bg').trim(); THEME.dot = cs.getPropertyValue('--bg-dot').trim();
+  THEME.accent = cs.getPropertyValue('--accent').trim();
+}
+refreshTheme();
+
+// Background = ONE small cached tile (a 28-unit cell) painted with a repeating pattern.
+// Panning/zooming only changes the pattern's transform; no per-dot draw calls. Used by both
+// the interactive canvas (k = DPR) and the recording canvas (k = recording px per CSS px).
+const TILE = 56;
+const bgTile = {cv: document.createElement('canvas'), pat: null, key: ''};
+bgTile.cv.width = bgTile.cv.height = TILE;
+function ensureTile(style, color){
+  const key = style + '|' + color;
+  if(bgTile.key === key) return;
+  bgTile.key = key;
+  const c = bgTile.cv.getContext('2d');
+  c.clearRect(0,0,TILE,TILE); c.fillStyle = c.strokeStyle = color; c.globalAlpha = 1;
+  if(style === 'dot'){
+    for(const [x,y] of [[0,0],[TILE,0],[0,TILE],[TILE,TILE]]){ c.beginPath(); c.arc(x,y,2.6,0,7); c.fill(); }
+  } else {
+    c.lineWidth = 2; c.globalAlpha = .8; c.beginPath();
+    if(style === 'grid'){ c.moveTo(0,0); c.lineTo(0,TILE); c.moveTo(TILE,0); c.lineTo(TILE,TILE); }
+    c.moveTo(0,0); c.lineTo(TILE,0); c.moveTo(0,TILE); c.lineTo(TILE,TILE);
+    c.stroke(); c.globalAlpha = 1;
+  }
+  bgTile.pat = gctx.createPattern(bgTile.cv, 'repeat');
+}
+function paintBackground(c, x0, y0, w, h, k, offX, offY){
+  c.setTransform(1,0,0,1,0,0);
+  c.fillStyle = state.bgColor || THEME.bg;
+  c.fillRect(x0, y0, w, h);
+  if(state.bgStyle === 'plain') return;
+  const spacing = 28 * state.zoom * k;
+  if(spacing < 6) return;
+  ensureTile(state.bgStyle, state.lineColor || THEME.dot);
+  const sc = spacing / TILE, e = offX + state.pan.x*k, f = offY + state.pan.y*k;
+  c.setTransform(sc,0,0,sc,e,f);
+  c.fillStyle = bgTile.pat;
+  c.fillRect((x0-e)/sc, (y0-f)/sc, w/sc, h/sc);
+  c.setTransform(1,0,0,1,0,0);
+}
+function drawGrid(){ paintBackground(gctx, 0, 0, gridCanvas.width, gridCanvas.height, DPR, 0, 0); recDirty = true; }
+
+// ---------- stroke path building (smoothed, cached) ----------
+// Points are joined with a quadratic B-spline: every raw sample becomes a control
+// point and the curve runs through the midpoints between them, so the ink never
+// reproduces the hard corners of the raw pointer samples.
+function buildPath(points){
+  const p = new Path2D();
+  if(points.length === 0) return p;
+  if(points.length === 1){ p.moveTo(points[0].x, points[0].y); p.lineTo(points[0].x+0.01, points[0].y); return p; }
+  p.moveTo(points[0].x, points[0].y);
+  for(let i=1;i<points.length-1;i++){
+    const mx = (points[i].x + points[i+1].x)/2, my = (points[i].y + points[i+1].y)/2;
+    p.quadraticCurveTo(points[i].x, points[i].y, mx, my);
+  }
+  const last = points[points.length-1];
+  p.lineTo(last.x, last.y);
+  return p;
+}
+
+// While a stroke is live we extend its Path2D one settled segment at a time instead
+// of rebuilding the whole thing every pointermove — rebuilding is O(n) per sample and
+// turns long strokes into visible stutter. `tailPath` covers the not-yet-settled tip.
+function startLivePath(s){
+  s.path = new Path2D();
+  s.path.moveTo(s.points[0].x, s.points[0].y);
+  s.liveIndex = 0;
+  updateLiveTail(s);
+}
+function extendLivePath(s){
+  const pts = s.points;
+  for(let i = Math.max(1, s.liveIndex + 1); i < pts.length - 1; i++){
+    const mx = (pts[i].x + pts[i+1].x)/2, my = (pts[i].y + pts[i+1].y)/2;
+    s.path.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+    s.liveIndex = i;
+  }
+  updateLiveTail(s);
+}
+function updateLiveTail(s){
+  const pts = s.points, n = pts.length, i = s.liveIndex;
+  const t = new Path2D();
+  if(n === 1){
+    t.moveTo(pts[0].x, pts[0].y); t.lineTo(pts[0].x+0.01, pts[0].y);
+  } else {
+    const sx = i === 0 ? pts[0].x : (pts[i].x + pts[i+1].x)/2;
+    const sy = i === 0 ? pts[0].y : (pts[i].y + pts[i+1].y)/2;
+    t.moveTo(sx, sy); t.lineTo(pts[n-1].x, pts[n-1].y);
+  }
+  s.tailPath = t;
+}
+function finalizeLivePath(s){
+  s.path = buildPath(s.points);
+  s.tailPath = null; s.liveIndex = undefined;
+}
+function bbox(points, pad){
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for(const pt of points){ if(pt.x<minX)minX=pt.x; if(pt.x>maxX)maxX=pt.x; if(pt.y<minY)minY=pt.y; if(pt.y>maxY)maxY=pt.y; }
+  return {minX:minX-pad,minY:minY-pad,maxX:maxX+pad,maxY:maxY+pad};
+}
+
+// ---------- rendering ----------
+let dirty = true;
+let recDirty = true;
+let staticRev = 0;   // bumped by every edit; invalidates the recorder's cached static-stroke layer
+function requestRender(){ dirty = true; recDirty = true; staticRev++; }
+// Live-stroke growth only: the static layer (everything except the live stroke) is unchanged.
+function requestLiveRender(){ dirty = true; recDirty = true; }
+// Shared by the interactive renderer and the recording compositor so both have identical
+// drawing semantics (eraser = destination-out, opacity, live tail). Context state is only
+// touched when it actually changes between consecutive strokes.
+function drawStrokes(c, list, skip){
+  let op = '', al = -1, col = '', w = -1;
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  for(let i = 0; i < list.length; i++){
+    const s = list[i]; if(s === skip) continue;
+    const er = s.tool === 'eraser', o = er ? 'destination-out' : 'source-over', a = er ? 1 : s.opacity;
+    if(o !== op){ c.globalCompositeOperation = o; op = o; }
+    if(a !== al){ c.globalAlpha = a; al = a; }
+    if(s.color !== col){ c.strokeStyle = s.color; col = s.color; }
+    if(s.size !== w){ c.lineWidth = s.size; w = s.size; }
+    if(!s.tailPath){ c.stroke(s.path); }
+    else if(a >= 1){ c.stroke(s.path); c.stroke(s.tailPath); }   // opaque: no merge needed, no allocation
+    else { const m = new Path2D(s.path); m.addPath(s.tailPath); c.stroke(m); } // translucent: merge to avoid double-composite
+  }
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+}
+const diag = {iRenders: 0};
+function render(){
+  applyTransform(ctx);
+  ctx.clearRect(-state.pan.x/state.zoom, -state.pan.y/state.zoom, canvas.width/(DPR*state.zoom), canvas.height/(DPR*state.zoom));
+  drawStrokes(ctx, state.strokes, null);
+  if(state.selection.length){
+    ctx.setLineDash([6/state.zoom,5/state.zoom]);
+    ctx.strokeStyle = THEME.accent; ctx.lineWidth = 1.4/state.zoom;
+    for(const s of state.selection){
+      ctx.strokeRect(s.bbox.minX, s.bbox.minY, s.bbox.maxX-s.bbox.minX, s.bbox.maxY-s.bbox.minY);
+    }
+    ctx.setLineDash([]);
+  }
+  if(marquee){
+    ctx.setLineDash([5/state.zoom,4/state.zoom]);
+    ctx.strokeStyle = THEME.accent; ctx.fillStyle = THEME.accent;
+    ctx.globalAlpha = .08;
+    ctx.fillRect(marquee.x0, marquee.y0, marquee.x1-marquee.x0, marquee.y1-marquee.y0);
+    ctx.globalAlpha = 1; ctx.lineWidth = 1.2/state.zoom;
+    ctx.strokeRect(marquee.x0, marquee.y0, marquee.x1-marquee.x0, marquee.y1-marquee.y0);
+    ctx.setLineDash([]);
+  }
+}
+function loop(){ if(dirty){ render(); dirty=false; diag.iRenders++; } requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+
+// ---------- history ----------
+function pushAction(a){ state.undoStack.push(a); state.redoStack.length=0; updateUndoBtns(); }
+function updateUndoBtns(){
+  document.getElementById('btn-undo').disabled = state.undoStack.length===0;
+  document.getElementById('btn-redo').disabled = state.redoStack.length===0;
+}
+function undo(){
+  const a = state.undoStack.pop(); if(!a) return;
+  applyInverse(a); state.redoStack.push(a); updateUndoBtns(); requestRender();
+}
+function redo(){
+  const a = state.redoStack.pop(); if(!a) return;
+  applyAction(a); state.undoStack.push(a); updateUndoBtns(); requestRender();
+}
+function applyInverse(a){
+  if(a.type==='add'){ removeStrokeById(a.stroke.id); }
+  else if(a.type==='multiAdd'){ for(const s of a.strokes) removeStrokeById(s.id); }
+  else if(a.type==='delete'){ for(const s of a.strokes) state.strokes.splice(s.index,0,s.stroke); }
+  else if(a.type==='move'){ for(const s of a.strokes){ translateStroke(s.stroke, -a.dx, -a.dy); } }
+  else if(a.type==='group'){ for(const s of a.entries) s.stroke.groupId = s.prevGroupId; }
+  else if(a.type==='ungroup'){ for(const s of a.entries) s.stroke.groupId = s.prevGroupId; }
+}
+function applyAction(a){
+  if(a.type==='add'){ state.strokes.push(a.stroke); }
+  else if(a.type==='multiAdd'){ for(const s of a.strokes) state.strokes.push(s); }
+  else if(a.type==='delete'){ for(const s of a.strokes) removeStrokeById(s.stroke.id); }
+  else if(a.type==='move'){ for(const s of a.strokes){ translateStroke(s.stroke, a.dx, a.dy); } }
+  else if(a.type==='group'){ for(const s of a.entries) s.stroke.groupId = a.groupId; }
+  else if(a.type==='ungroup'){ for(const s of a.entries) s.stroke.groupId = null; }
+}
+function removeStrokeById(id){ const i = state.strokes.findIndex(s=>s.id===id); if(i>-1) state.strokes.splice(i,1); }
+function translateStroke(s, dx, dy){
+  for(const p of s.points){ p.x+=dx; p.y+=dy; }
+  s.bbox.minX+=dx; s.bbox.maxX+=dx; s.bbox.minY+=dy; s.bbox.maxY+=dy;
+  s.path = buildPath(s.points);
+}
+
+// ---------- selection actions (context menu / shortcuts) ----------
+function expandToGroups(list){
+  const ids = new Set(list.map(s=>s.id));
+  let changed = true;
+  while(changed){
+    changed = false;
+    for(const s of state.strokes){
+      if(s.groupId && [...ids].some(id=>{
+        const owner = state.strokes.find(x=>x.id===id);
+        return owner && owner.groupId === s.groupId;
+      }) && !ids.has(s.id)){ ids.add(s.id); changed = true; }
+    }
+  }
+  return state.strokes.filter(s=>ids.has(s.id));
+}
+function deleteSelection(){
+  if(!state.selection.length) return;
+  const removed = state.selection.map(s=>({stroke:s, index: state.strokes.indexOf(s)}));
+  removed.sort((a,b)=>a.index-b.index);
+  for(const r of removed) state.strokes.splice(state.strokes.indexOf(r.stroke),1);
+  pushAction({type:'delete', strokes: removed});
+  state.selection=[]; requestRender();
+}
+function groupSelection(){
+  if(state.selection.length < 2) return;
+  const gid = 'g'+(groupCounter++);
+  const entries = state.selection.map(s=>({stroke:s, prevGroupId:s.groupId||null}));
+  for(const e of entries) e.stroke.groupId = gid;
+  pushAction({type:'group', entries, groupId: gid});
+  requestRender(); closeCtxMenu();
+}
+function ungroupSelection(){
+  const grouped = state.selection.filter(s=>s.groupId);
+  if(!grouped.length) return;
+  const entries = grouped.map(s=>({stroke:s, prevGroupId:s.groupId}));
+  for(const e of entries) e.stroke.groupId = null;
+  pushAction({type:'ungroup', entries});
+  requestRender(); closeCtxMenu();
+}
+function copySelection(){
+  if(!state.selection.length) return;
+  state.clipboard = state.selection.map(s=>({color:s.color, size:s.size, baseSize:s.baseSize, tool:s.tool,
+    opacity:s.opacity, points: s.points.map(p=>({...p})), groupId: s.groupId}));
+  closeCtxMenu();
+}
+function pasteClipboard(){
+  if(!state.clipboard.length) return;
+  const offset = 24;
+  const gidMap = new Map();
+  const created = state.clipboard.map(c=>{
+    let gid = null;
+    if(c.groupId){ if(!gidMap.has(c.groupId)) gidMap.set(c.groupId, 'g'+(groupCounter++)); gid = gidMap.get(c.groupId); }
+    const points = c.points.map(p=>({...p, x:p.x+offset, y:p.y+offset}));
+    const s = {id:idCounter++, tool:c.tool, color:c.color, size:c.size, baseSize:c.baseSize,
+      opacity:c.opacity, points, groupId: gid};
+    s.path = buildPath(points); s.bbox = bbox(points, s.size/2+2);
+    return s;
+  });
+  pushAction({type:'multiAdd', strokes: created});
+  for(const s of created) state.strokes.push(s);
+  state.selection = created;
+  requestRender(); closeCtxMenu();
+}
+
+// ---------- context menu (right-click / long-press) ----------
+const ctxMenu = document.getElementById('ctx-menu');
+function closeCtxMenu(){ ctxMenu.classList.remove('open'); }
+function openContextMenuAt(clientX, clientY, world){
+  const hit = hitTest(world);
+  if(hit && !state.selection.includes(hit)) state.selection = expandToGroups([hit]);
+  else if(!hit && !state.selection.length && !state.clipboard.length) return; // nothing to act on
+  requestRender();
+  document.getElementById('ctx-copy').disabled = !state.selection.length;
+  document.getElementById('ctx-paste').disabled = !state.clipboard.length;
+  document.getElementById('ctx-group').disabled = state.selection.length < 2;
+  document.getElementById('ctx-ungroup').disabled = !state.selection.some(s=>s.groupId);
+  document.getElementById('ctx-delete').disabled = !state.selection.length;
+  ctxMenu.classList.add('open');
+  const r = ctxMenu.getBoundingClientRect();
+  ctxMenu.style.left = Math.min(innerWidth - r.width - 8, clientX) + 'px';
+  ctxMenu.style.top = Math.min(innerHeight - r.height - 8, clientY) + 'px';
+}
+stage.addEventListener('contextmenu', e=>{
+  e.preventDefault();
+  openContextMenuAt(e.clientX, e.clientY, screenToWorld(e.clientX, e.clientY));
+});
+document.getElementById('ctx-copy').addEventListener('click', copySelection);
+document.getElementById('ctx-paste').addEventListener('click', pasteClipboard);
+document.getElementById('ctx-group').addEventListener('click', groupSelection);
+document.getElementById('ctx-ungroup').addEventListener('click', ungroupSelection);
+document.getElementById('ctx-delete').addEventListener('click', ()=>{ deleteSelection(); closeCtxMenu(); });
+document.addEventListener('pointerdown', e=>{ if(!e.target.closest('#ctx-menu')) closeCtxMenu(); });
+window.addEventListener('blur', closeCtxMenu);
+
+// ---------- pointer interaction ----------
+let drawingStroke = null;
+let panStart=null, panOrigin=null;
+let marquee = null;
+let dragSelect=null;
+let spaceHeld=false;
+let longPress=null;
+const activePointers = new Map();
+
+
+function setTool(t){
+  state.tool = t; state.selection=[]; requestRender();
+  document.querySelectorAll('.tbtn[data-tool]').forEach(b=>b.classList.toggle('active', b.dataset.tool===t));
+  canvas.style.cursor = t==='hand' ? 'grab' : t==='select' ? 'default' : 'crosshair';
+  closeAllPops();
+}
+
+// ---------- input smoothing ----------
+// Raw pointer samples jitter by a pixel or two, which the spline faithfully
+// reproduces as wobble. A speed-adaptive low-pass filter damps that hard when the
+// pointer is slow (where jitter is most visible) and nearly passes through when it
+// is fast (where responsiveness matters more than filtering).
+let inputFilter = null;
+const MIN_STEP = 1.2; // screen px; closer samples add no shape, only noise
+
+function beginInput(x, y){ inputFilter = {x, y}; }
+function filterInput(x, y){
+  const dx = x - inputFilter.x, dy = y - inputFilter.y;
+  const a = Math.min(1, 0.22 + Math.hypot(dx, dy) * 0.055);
+  inputFilter.x += dx * a; inputFilter.y += dy * a;
+  return inputFilter;
+}
+function samplesOf(e){
+  const c = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : null;
+  return c && c.length ? c : [e];
+}
+
+stage.addEventListener('pointerdown', e=>{
+  activePointers.set(e.pointerId, e);
+  if(e.button===2) return;   // right-click: let it fall through to the native 'contextmenu' event untouched —
+                              // setPointerCapture below would otherwise suppress that event in most browsers
+  if(activePointers.size===2){ startTwoFingerPan(); return; }
+  if(activePointers.size>2) return;
+  canvas.setPointerCapture(e.pointerId);
+  const world = screenToWorld(e.clientX, e.clientY);
+  const usePan = state.tool==='hand' || e.button===1 || spaceHeld;
+  if(usePan){
+    panStart = {x:e.clientX,y:e.clientY}; panOrigin={...state.pan};
+    canvas.style.cursor='grabbing';
+    return;
+  }
+  if(state.tool==='pen' || state.tool==='eraser'){
+    const size = state.tool==='eraser' ? state.eraserSize : state.penSize;
+    beginInput(e.clientX, e.clientY);
+    drawingStroke = {
+      id: idCounter++, tool: state.tool, color: state.penColor,
+      size,                       // constant for the whole stroke: blunt, even ink
+      opacity: state.penOpacity/100,
+      points: [{x:world.x,y:world.y}],
+      lastScreen: {x:e.clientX, y:e.clientY},
+    };
+    startLivePath(drawingStroke);
+    state.strokes.push(drawingStroke);
+    stage.classList.add('drawing');
+    requestRender();
+  } else if(state.tool==='select'){
+    // check if clicking inside an already-selected stroke -> start move
+    const hit = hitTest(world);
+    if(hit && state.selection.includes(hit)){
+      dragSelect = {last:world};
+    } else if(hit){
+      state.selection = expandToGroups([hit]); requestRender();
+      dragSelect = {last:world};
+    } else {
+      state.selection = [];
+      marquee = {x0:world.x,y0:world.y,x1:world.x,y1:world.y};
+      requestRender();
+    }
+  }
+  // Long-press (touch/pen) opens the same context menu as a right-click — only in
+  // select mode, so it never hijacks an in-progress pen stroke or pan gesture.
+  if(e.pointerType !== 'mouse' && state.tool==='select'){
+    longPress = {x:e.clientX, y:e.clientY, world, timer: setTimeout(()=>{
+      longPress = null; marquee = null;   // don't let the stale marquee rect override the menu's selection on release
+      openContextMenuAt(e.clientX, e.clientY, world);
+    }, 500)};
+  }
+});
+
+stage.addEventListener('pointermove', e=>{
+  if(!activePointers.has(e.pointerId) && e.pointerType!=='mouse') return;
+  activePointers.set(e.pointerId, e);
+  if(longPress && Math.hypot(e.clientX-longPress.x, e.clientY-longPress.y) > 10){
+    clearTimeout(longPress.timer); longPress = null;
+  }
+  if(activePointers.size===2 && twoFinger){ updateTwoFingerPan(); return; }
+  if(panStart){
+    if(!state.panLockX) state.pan.x = panOrigin.x + (e.clientX - panStart.x);
+    state.pan.y = panOrigin.y + (e.clientY - panStart.y);
+    drawGrid(); requestRender(); return;
+  }
+  const world = screenToWorld(e.clientX, e.clientY);
+  if(drawingStroke){
+    let added = false;
+    for(const sample of samplesOf(e)){
+      const f = filterInput(sample.clientX, sample.clientY);
+      const last = drawingStroke.lastScreen;
+      if(Math.hypot(f.x - last.x, f.y - last.y) < MIN_STEP) continue;
+      last.x = f.x; last.y = f.y;
+      const w = screenToWorld(f.x, f.y);
+      drawingStroke.points.push({x:w.x, y:w.y});
+      added = true;
+    }
+    if(added){ extendLivePath(drawingStroke); requestLiveRender(); }
+  } else if(marquee){
+    marquee.x1 = world.x; marquee.y1 = world.y; requestRender();
+  } else if(dragSelect){
+    const dx = world.x - dragSelect.last.x, dy = world.y - dragSelect.last.y;
+    for(const s of state.selection) translateStroke(s, dx, dy);
+    dragSelect.last = world; dragSelect.moved = (dragSelect.moved||0)+Math.hypot(dx,dy);
+    dragSelect.totalDx = (dragSelect.totalDx||0)+dx; dragSelect.totalDy=(dragSelect.totalDy||0)+dy;
+    requestRender();
+  }
+});
+
+function endInteraction(e){
+  activePointers.delete(e.pointerId);
+  if(activePointers.size<2) twoFinger=null;
+  if(longPress){ clearTimeout(longPress.timer); longPress = null; }
+  if(panStart){ panStart=null; canvas.style.cursor = state.tool==='hand'?'grab':'crosshair'; }
+  if(drawingStroke){
+    finalizeLivePath(drawingStroke);
+    drawingStroke.lastScreen = undefined;
+    stage.classList.remove('drawing');
+    drawingStroke.bbox = bbox(drawingStroke.points, drawingStroke.size/2+2);
+    pushAction({type:'add', stroke: drawingStroke});
+    drawingStroke = null;
+    requestRender();
+  }
+  if(marquee){
+    const x0=Math.min(marquee.x0,marquee.x1), x1=Math.max(marquee.x0,marquee.x1);
+    const y0=Math.min(marquee.y0,marquee.y1), y1=Math.max(marquee.y0,marquee.y1);
+    state.selection = expandToGroups(state.strokes.filter(s=> s.tool!=='eraser' && s.bbox.maxX>=x0 && s.bbox.minX<=x1 && s.bbox.maxY>=y0 && s.bbox.minY<=y1));
+    marquee = null; requestRender();
+  }
+  if(dragSelect){
+    if(dragSelect.totalDx || dragSelect.totalDy){
+      pushAction({type:'move', strokes: state.selection.map(s=>({stroke:s})), dx: dragSelect.totalDx, dy: dragSelect.totalDy});
+    }
+    dragSelect = null;
+  }
+}
+stage.addEventListener('pointerup', endInteraction);
+stage.addEventListener('pointercancel', endInteraction);
+
+function hitTest(world){
+  for(let i=state.strokes.length-1;i>=0;i--){
+    const s = state.strokes[i];
+    if(s.tool==='eraser') continue;
+    if(world.x<s.bbox.minX||world.x>s.bbox.maxX||world.y<s.bbox.minY||world.y>s.bbox.maxY) continue;
+    ctx.lineWidth = Math.max(s.size, 10/state.zoom);
+    if(ctx.isPointInStroke(s.path, world.x, world.y)) return s;
+  }
+  return null;
+}
+
+// Zoom is deliberately NOT driven by pinch or ctrl/cmd+wheel (including trackpad pinch,
+// which browsers report as a synthetic ctrl+wheel) — only the toolbar +/- buttons (and
+// their keyboard equivalents) change zoom. A two-finger touch instead pans, same as one
+// finger, still subject to the horizontal lock.
+let twoFinger = null;
+function startTwoFingerPan(){
+  const pts = [...activePointers.values()];
+  twoFinger = { mid: mid(pts[0],pts[1]), pan: {...state.pan} };
+}
+function updateTwoFingerPan(){
+  const pts = [...activePointers.values()];
+  const m = mid(pts[0],pts[1]);
+  if(!state.panLockX) state.pan.x = twoFinger.pan.x + (m.x - twoFinger.mid.x);
+  state.pan.y = twoFinger.pan.y + (m.y - twoFinger.mid.y);
+  drawGrid(); requestRender();
+}
+function mid(a,b){ return {x:(a.clientX+b.clientX)/2, y:(a.clientY+b.clientY)/2}; }
+function clamp(v,a,b){ return Math.min(b,Math.max(a,v)); }
+
+// wheel: pan only (vertical always, horizontal only when unlocked) — no zoom here by design.
+stage.addEventListener('wheel', e=>{
+  e.preventDefault();
+  if(!state.panLockX) state.pan.x -= e.deltaX;
+  state.pan.y -= e.deltaY;
+  drawGrid(); requestRender();
+}, {passive:false});
+
+function zoomAt(cx,cy,newZoom){
+  const wx = (cx - state.pan.x)/state.zoom, wy = (cy - state.pan.y)/state.zoom;
+  state.zoom = newZoom;
+  state.pan.x = cx - wx*newZoom; state.pan.y = cy - wy*newZoom;
+  drawGrid(); requestRender(); updateZoomLabel();
+}
+function updateZoomLabel(){ document.getElementById('zoomval').textContent = Math.round(state.zoom*100)+'%'; }
+
+// ---------- keyboard ----------
+window.addEventListener('keydown', e=>{
+  if(e.code==='Space' && !spaceHeld){ spaceHeld=true; if(state.tool!=='hand') canvas.style.cursor='grab'; }
+  const mod = e.ctrlKey||e.metaKey;
+  if(mod && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
+  if(mod && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
+  if(mod && e.key.toLowerCase()==='c'){ if(state.selection.length){ e.preventDefault(); copySelection(); } return; }
+  if(mod && e.key.toLowerCase()==='v'){ if(state.clipboard.length){ e.preventDefault(); pasteClipboard(); } return; }
+  if(mod && e.key.toLowerCase()==='g'){ e.preventDefault(); e.shiftKey?ungroupSelection():groupSelection(); return; }
+  if((e.key==='Backspace'||e.key==='Delete') && state.selection.length){
+    e.preventDefault(); deleteSelection(); return;
+  }
+  if(document.activeElement && ['INPUT'].includes(document.activeElement.tagName)) return;
+  if(e.key==='p'||e.key==='P') setTool('pen');
+  else if(e.key==='e'||e.key==='E') setTool('eraser');
+  else if(e.key==='v'||e.key==='V') setTool('select');
+  else if(e.key==='h'||e.key==='H') setTool('hand');
+  else if(e.key==='r'||e.key==='R') recBtn.click();
+  else if(e.key==='+'||e.key==='=') zoomAt(innerWidth/2, innerHeight/2, clamp(state.zoom*1.2,0.1,8));
+  else if(e.key==='-'||e.key==='_') zoomAt(innerWidth/2, innerHeight/2, clamp(state.zoom/1.2,0.1,8));
+  else if(e.key==='0') resetZoom();
+});
+window.addEventListener('keyup', e=>{ if(e.code==='Space'){ spaceHeld=false; canvas.style.cursor = state.tool==='hand'?'grab':(state.tool==='select'?'default':'crosshair'); }});
+function resetZoom(){ state.zoom=1; state.pan={x:0,y:0}; drawGrid(); requestRender(); updateZoomLabel(); }
+
+// ---------- toolbar wiring ----------
+document.querySelectorAll('.tbtn[data-tool]').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    if(state.tool===b.dataset.tool){
+      if(b.dataset.tool==='pen') togglePop('pop-pen', b);
+      else if(b.dataset.tool==='eraser') togglePop('pop-eraser', b);
+    } else setTool(b.dataset.tool);
+  });
+});
+document.getElementById('btn-undo').addEventListener('click', undo);
+document.getElementById('btn-redo').addEventListener('click', redo);
+document.getElementById('btn-zoomin').addEventListener('click', ()=>zoomAt(innerWidth/2,innerHeight/2, clamp(state.zoom*1.2,0.1,8)));
+document.getElementById('btn-zoomout').addEventListener('click', ()=>zoomAt(innerWidth/2,innerHeight/2, clamp(state.zoom/1.2,0.1,8)));
+const btnPanX = document.getElementById('btn-panx');
+function setPanLockX(locked){
+  state.panLockX = locked;
+  btnPanX.classList.toggle('active', !locked);
+  btnPanX.title = locked ? 'Horizontal pan: locked (click to unlock)' : 'Horizontal pan: unlocked (click to lock)';
+}
+btnPanX.addEventListener('click', ()=>setPanLockX(!state.panLockX));
+document.getElementById('btn-zoomlabel').addEventListener('click', resetZoom);
+document.getElementById('btn-bg').addEventListener('click', (e)=>togglePop('pop-bg', e.currentTarget));
+
+// pen color/size swatches
+const penColorsEl = document.getElementById('pen-colors');
+PEN_COLORS.forEach(c=>{
+  const d = document.createElement('div'); d.className='swatch'+(c===state.penColor?' sel':'');
+  d.style.background=c; d.addEventListener('click',()=>{ state.penColor=c; syncSwatches(); document.getElementById('pen-dot').style.background=c; });
+  penColorsEl.appendChild(d);
+});
+document.getElementById('pen-dot').style.background = state.penColor;
+const penSizesEl = document.getElementById('pen-sizes');
+PEN_SIZES.forEach(sz=>{
+  const b = document.createElement('button'); b.className='sizebtn'+(sz===state.penSize?' sel':'');
+  const inner=document.createElement('div'); inner.className='b'; const d=Math.max(3,sz*1.7); inner.style.width=d+'px'; inner.style.height=d+'px';
+  b.appendChild(inner);
+  b.addEventListener('click',()=>{ state.penSize=sz; syncSwatches(); });
+  penSizesEl.appendChild(b);
+});
+document.getElementById('pen-opacity').addEventListener('input', e=>{ state.penOpacity = +e.target.value; });
+function syncSwatches(){
+  [...penColorsEl.children].forEach((el,i)=>el.classList.toggle('sel', PEN_COLORS[i]===state.penColor));
+  [...penSizesEl.children].forEach((el,i)=>el.classList.toggle('sel', PEN_SIZES[i]===state.penSize));
+  [...eraserSizesEl.children].forEach((el,i)=>el.classList.toggle('sel', ERASER_SIZES[i]===state.eraserSize));
+}
+const eraserSizesEl = document.getElementById('eraser-sizes');
+ERASER_SIZES.forEach(sz=>{
+  const b = document.createElement('button'); b.className='sizebtn'+(sz===state.eraserSize?' sel':'');
+  const inner=document.createElement('div'); inner.className='b'; const d=Math.max(4,sz*0.4); inner.style.width=d+'px'; inner.style.height=d+'px';
+  inner.style.background='var(--muted)';
+  b.appendChild(inner);
+  b.addEventListener('click',()=>{ state.eraserSize=sz; syncSwatches(); });
+  eraserSizesEl.appendChild(b);
+});
+
+// background styles
+const BG_STYLES = [
+  {id:'plain', label:'Plain'}, {id:'dot', label:'Dot'}, {id:'grid', label:'Grid'}, {id:'lines', label:'Lines'}
+];
+const bgStylesEl = document.getElementById('bg-styles');
+BG_STYLES.forEach(o=>{
+  const b = document.createElement('div'); b.className='bgswatch'+(o.id===state.bgStyle?' sel':'');
+  b.title = o.label; b.style.background='var(--bg)'; b.style.border='2px solid var(--panel-border)';
+  b.style.backgroundImage = o.id==='dot' ? 'radial-gradient(var(--bg-dot) 1px, transparent 1px)' :
+    o.id==='grid' ? 'linear-gradient(var(--bg-dot) 1px, transparent 1px), linear-gradient(90deg, var(--bg-dot) 1px, transparent 1px)' :
+    o.id==='lines' ? 'linear-gradient(var(--bg-dot) 1px, transparent 1px)' : 'none';
+  b.addEventListener('click', ()=>{ state.bgStyle=o.id; drawGrid(); [...bgStylesEl.children].forEach(c=>c.classList.remove('sel')); b.classList.add('sel'); });
+  bgStylesEl.appendChild(b);
+});
+document.querySelectorAll('#theme-btns .mini').forEach(b=>{
+  b.addEventListener('click', ()=>{ document.documentElement.setAttribute('data-theme', b.dataset.theme); refreshTheme(); drawGrid(); requestRender(); });
+});
+document.getElementById('bg-color-picker').addEventListener('input', e=>{ state.bgColor = e.target.value; drawGrid(); });
+document.getElementById('line-color-picker').addEventListener('input', e=>{ state.lineColor = e.target.value; drawGrid(); });
+document.getElementById('btn-bg-reset').addEventListener('click', ()=>{
+  state.bgColor = null; state.lineColor = null; drawGrid();
+  document.getElementById('bg-color-picker').value = '#f6f5f3';
+  document.getElementById('line-color-picker').value = '#d7d4cd';
+});
+document.getElementById('btn-clear').addEventListener('click', ()=>{
+  if(!state.strokes.length) return;
+  const removed = state.strokes.map((s,i)=>({stroke:s,index:i}));
+  state.strokes = []; state.selection=[];
+  pushAction({type:'delete', strokes: removed});
+  requestRender();
+});
+
+// ---------- popovers ----------
+function positionPop(pop, anchor){
+  const r = anchor.getBoundingClientRect();
+  const tr = toolbar.getBoundingClientRect();
+  pop.style.left = Math.min(innerWidth-pop.offsetWidth-10, Math.max(10, r.left)) + 'px';
+  const above = tr.top > innerHeight/2;
+  pop.style.top = above ? (tr.top - pop.offsetHeight - 10)+'px' : (tr.bottom+10)+'px';
+}
+function closeAllPops(){ document.querySelectorAll('.pop').forEach(p=>p.classList.remove('open')); }
+function togglePop(id, anchor){
+  const pop = document.getElementById(id);
+  const willOpen = !pop.classList.contains('open');
+  closeAllPops();
+  if(willOpen){ pop.classList.add('open'); positionPop(pop, anchor); }
+}
+document.addEventListener('pointerdown', e=>{
+  if(e.target.closest('.pop') || e.target.closest('#toolbar')) return;
+  closeAllPops();
+});
+
+// ---------- draggable toolbar ----------
+const grip = document.getElementById('grip');
+let dragTB=null;
+grip.addEventListener('pointerdown', e=>{
+  e.stopPropagation();
+  dragTB = {sx:e.clientX, sy:e.clientY, r:toolbar.getBoundingClientRect()};
+  toolbar.classList.add('dragging');
+  grip.setPointerCapture(e.pointerId);
+});
+grip.addEventListener('pointermove', e=>{
+  if(!dragTB) return;
+  let x = dragTB.r.left + (e.clientX-dragTB.sx);
+  let y = dragTB.r.top + (e.clientY-dragTB.sy);
+  x = clamp(x, 8, innerWidth - toolbar.offsetWidth - 8);
+  y = clamp(y, 8, innerHeight - toolbar.offsetHeight - 8);
+  toolbar.style.left = x+'px'; toolbar.style.top = y+'px';
+  toolbar.style.right='auto'; toolbar.style.bottom='auto'; toolbar.style.transform='none';
+  const edgeMargin = 60;
+  const vertical = x < edgeMargin || x > innerWidth - toolbar.offsetWidth - edgeMargin;
+  toolbar.classList.toggle('vertical', vertical && (y>edgeMargin && y<innerHeight-toolbar.offsetHeight-edgeMargin));
+});
+grip.addEventListener('pointerup', e=>{ dragTB=null; toolbar.classList.remove('dragging'); });
+
+// initial position: bottom center
+function initToolbarPosition(){
+  toolbar.style.left='50%'; toolbar.style.bottom='calc(20px + env(safe-area-inset-bottom,0px))'; toolbar.style.top='auto'; toolbar.style.transform='translateX(-50%)';
+}
+initToolbarPosition();
+
+// ---------- screen/session recording (client-side only) ----------
+/* EXECUTION MODEL (each stage is independent of the others)
+ *
+ *  Interactive rAF loop   display Hz, DPR-sized gridCanvas/canvas. Never touches recording.
+ *  Recording frame clock  ONE drift-corrected setTimeout chain at REC_FPS. No rAF, so a 120 Hz
+ *                         display does not make the recorder run at 120 Hz.
+ *  Recording compositor   renders straight from app state (strokes, pan, zoom, background) into its
+ *                         own fixed-size canvases (1920x1080, or 1080x1920 if started in portrait).
+ *                         It never reads the DPR canvases, so there is no big-canvas copy+downscale.
+ *                         Runs only when recDirty; the static-stroke layer is cached and only the
+ *                         live stroke is re-drawn while inking. Selection/marquee/toolbar/timer are
+ *                         NOT recorded.
+ *  Encoder                out.captureStream(0) + track.requestFrame() each tick (fallback:
+ *                         captureStream(REC_FPS), same single clock, no second loop) -> MediaRecorder.
+ *
+ *  Aspect: the viewport is FIT (letterboxed/pillarboxed, never cropped or stretched) into the
+ *  recording frame. Orientation is chosen once at start so the encoder size never changes mid-file.
+ */
+const REC_FPS = 30;
+// Resolution ladder: try 1080p30 first, then step DOWN in resolution before ever touching fps.
+// Bitrate is a request, not a guarantee. Whiteboard content is mostly static, so 5 Mbps is ample.
+const REC_TIERS = [{w:1920,h:1080,bps:5e6}, {w:1280,h:720,bps:3e6}, {w:960,h:540,bps:1.8e6}];
+// Order is only a tie-breaker; Media Capabilities (when available) decides. mp4/H.264 first for
+// playback compatibility. No claim is made about which codec is hardware-accelerated on a device.
+const REC_MIMES = ['video/mp4;codecs=avc1.640028','video/webm;codecs=h264','video/webm;codecs=vp8',
+                   'video/webm;codecs=vp9','video/mp4','video/webm'];
+const recBtn = document.getElementById('btn-record');
+const recTimerEl = document.getElementById('rec-timer');
+const recTimeEl = document.getElementById('rec-time');
+let rec = null, recBusy = false;   // rec = active session object (null when idle)
+
+// --- capability detection / configuration ---
+function mediaCaps(mime, w, h, bps){
+  const mc = navigator.mediaCapabilities;
+  if(!mc || !mc.encodingInfo) return Promise.resolve(null);
+  try{
+    return mc.encodingInfo({type:'record', video:{contentType:mime, width:w, height:h, bitrate:bps, framerate:REC_FPS}})
+      .catch(()=>null);
+  }catch(_){ return Promise.resolve(null); }
+}
+async function pickConfig(portrait){
+  const sup = REC_MIMES.filter(m=>MediaRecorder.isTypeSupported(m));
+  let fallback = null;
+  for(const t of REC_TIERS){
+    const w = portrait ? t.h : t.w, h = portrait ? t.w : t.h;
+    let smooth = null, ok = null;
+    for(const mime of sup){
+      const info = await mediaCaps(mime, w, h, t.bps);
+      const cfg = {mime, w, h, bps:t.bps};
+      if(!info){ if(!ok) ok = Object.assign(cfg, {caps:'unverified'}); continue; }
+      if(!info.supported) continue;
+      if(info.smooth && info.powerEfficient) return Object.assign(cfg, {caps:'smooth+powerEfficient'});
+      if(info.smooth && !smooth) smooth = Object.assign(cfg, {caps:'smooth'});
+      if(!ok) ok = Object.assign({mime, w, h, bps:t.bps}, {caps:'supported'});
+    }
+    if(smooth) return smooth;
+    if(ok && ok.caps === 'unverified') return ok;   // no capability data: trust the top tier
+    if(ok && !fallback) fallback = ok;              // supported but not "smooth": try a lower tier first
+  }
+  const t = REC_TIERS[REC_TIERS.length-1];
+  return fallback || {mime: sup[0]||'', w:portrait?t.h:t.w, h:portrait?t.w:t.h, bps:t.bps, caps:'last-resort'};
+}
+
+// --- recording compositor (allocation-light; no DOM reads, no getComputedStyle) ---
+function makeCompositor(w, h){
+  const mk = ()=>{ const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+  const out = mk(), stat = mk();
+  return {W:w, H:h, out, octx: out.getContext('2d', {alpha:false}),
+    stat, sctx: stat.getContext('2d'), live:null, lctx:null, one:[null],
+    sRev:-1, sLive:-1, sZ:0, sPx:0, sPy:0, sK:0, sOx:0, sOy:0};
+}
+function paintStrokes(c, list, skip, k, ox, oy, vw, vh){
+  c.setTransform(1,0,0,1,0,0);
+  c.clearRect(0, 0, c.canvas.width, c.canvas.height);
+  c.save(); c.beginPath(); c.rect(ox, oy, vw, vh); c.clip();   // keep ink inside the fitted viewport
+  const z = k*state.zoom;
+  c.setTransform(z, 0, 0, z, ox + k*state.pan.x, oy + k*state.pan.y);
+  drawStrokes(c, list, skip);
+  c.restore();
+}
+function renderRecordingFrame(r){
+  const iw = innerWidth, ih = innerHeight;
+  const k = Math.min(r.W/iw, r.H/ih), vw = iw*k, vh = ih*k, ox = (r.W-vw)/2, oy = (r.H-vh)/2;
+  const lv = drawingStroke, lid = lv ? lv.id : 0;
+  if(r.sRev !== staticRev || r.sLive !== lid || r.sZ !== state.zoom || r.sPx !== state.pan.x ||
+     r.sPy !== state.pan.y || r.sK !== k || r.sOx !== ox || r.sOy !== oy){
+    paintStrokes(r.sctx, state.strokes, lv, k, ox, oy, vw, vh);   // static layer = everything but the live stroke
+    r.sRev = staticRev; r.sLive = lid; r.sZ = state.zoom; r.sPx = state.pan.x; r.sPy = state.pan.y;
+    r.sK = k; r.sOx = ox; r.sOy = oy;
+  }
+  const o = r.octx;
+  o.setTransform(1,0,0,1,0,0);
+  o.fillStyle = state.bgColor || THEME.bg; o.fillRect(0, 0, r.W, r.H);     // letterbox bars
+  paintBackground(o, ox, oy, vw, vh, k, ox, oy);
+  let src = r.stat;
+  if(lv){   // live stroke: copy static layer, draw live stroke on top (so a live eraser still erases)
+    if(!r.live){ r.live = document.createElement('canvas'); r.live.width = r.W; r.live.height = r.H; r.lctx = r.live.getContext('2d'); }
+    const l = r.lctx;
+    l.setTransform(1,0,0,1,0,0); l.globalCompositeOperation = 'copy'; l.drawImage(r.stat, 0, 0);
+    l.globalCompositeOperation = 'source-over';
+    r.one[0] = lv; l.save(); l.beginPath(); l.rect(ox, oy, vw, vh); l.clip();
+    const z = k*state.zoom; l.setTransform(z, 0, 0, z, ox + k*state.pan.x, oy + k*state.pan.y);
+    drawStrokes(l, r.one, null); l.restore(); r.one[0] = null;
+    src = r.live;
+  }
+  o.drawImage(src, 0, 0);
+}
+
+// --- frame pacing: single clock, exactly REC_FPS, independent of display refresh ---
+function recTick(){
+  const r = rec; if(!r || r.stopping) return;
+  const t0 = performance.now();
+  if(recDirty){ recDirty = false; try{ renderRecordingFrame(r.rc); }catch(err){ console.warn('rec render', err); } r.renders++; }
+  if(r.manual){ try{ r.track.requestFrame(); }catch(_){} }
+  const work = performance.now() - t0;
+  r.frameMs = r.frameMs*0.9 + work*0.1; r.ticks++;
+  // Demonstrated overload only (sustained compositor time > ~85% of the frame budget): drop to 24 fps.
+  if(work > r.interval*0.85){ if(++r.slow >= 45 && r.fps === REC_FPS){ r.fps = 24; r.interval = 1000/24; if(dbg.on) console.info('[rec] sustained overload -> 24 fps'); } }
+  else if(r.slow > 0) r.slow--;
+  const now = performance.now();
+  r.next += r.interval;
+  if(r.next < now - r.interval) r.next = now;   // fell behind: drop frames, never burst to catch up
+  r.timer = setTimeout(recTick, Math.max(0, r.next - now));
+}
+
+// --- lifecycle ---
+function setRecUI(on){
+  recBtn.classList.toggle('recording', on); recBtn.title = on ? 'Stop recording (R)' : 'Record screen (R)';
+  recTimerEl.classList.toggle('show', on);
+}
+function teardownRecording(r){
+  clearTimeout(r.timer); clearInterval(r.ui);
+  const mr = r.mr; mr.ondataavailable = mr.onerror = mr.onstop = null;
+  r.stream.getTracks().forEach(t=>{ t.onended = null; try{ t.stop(); }catch(_){} });
+  const rc = r.rc;
+  for(const c of [rc.out, rc.stat, rc.live]) if(c){ c.width = c.height = 0; }   // free backing stores
+  rc.octx = rc.sctx = rc.lctx = rc.out = rc.stat = rc.live = null; rc.one = null;
+  if(rec === r) rec = null;
+  setRecUI(false);
+}
+function finishRecording(r){
+  if(r.done) return; r.done = true;
+  const chunks = r.chunks, type = r.mr.mimeType || r.cfg.mime || 'video/webm';
+  teardownRecording(r);
+  let size = 0; for(const c of chunks) size += c.size;
+  if(!size){ showHint('Recording was empty — nothing saved', 3000); return; }
+  const url = URL.createObjectURL(new Blob(chunks, {type}));
+  chunks.length = 0;
+  const a = document.createElement('a');
+  a.href = url; a.download = `slate-recording-${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.${type.includes('mp4')?'mp4':'webm'}`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 10000);
+  showHint('Recording saved to your downloads', 2600);
+}
+function stopRecording(){
+  const r = rec; if(!r || r.stopping) return;
+  r.stopping = true; clearTimeout(r.timer); clearInterval(r.ui); setRecUI(false);
+  try{ if(r.mr.state !== 'inactive'){ r.mr.stop(); setTimeout(()=>finishRecording(r), 4000); } else finishRecording(r); }
+  catch(_){ finishRecording(r); }
+}
+async function startRecording(){
+  if(rec || recBusy) return;
+  if(!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream){
+    showHint("Recording isn't supported in this browser", 3000); return;
+  }
+  recBusy = true;
+  let rc = null, stream = null;
+  try{
+    const cfg = await pickConfig(innerHeight > innerWidth);
+    rc = makeCompositor(cfg.w, cfg.h);
+    stream = rc.out.captureStream(0);
+    let track = stream.getVideoTracks()[0];
+    const manual = !!track && typeof track.requestFrame === 'function';   // CanvasCaptureMediaStreamTrack only
+    if(!manual){ stream.getTracks().forEach(t=>t.stop()); stream = rc.out.captureStream(REC_FPS); track = stream.getVideoTracks()[0]; }
+    const opts = {videoBitsPerSecond: cfg.bps}; if(cfg.mime) opts.mimeType = cfg.mime;
+    let mr;
+    try{ mr = new MediaRecorder(stream, opts); }
+    catch(_){ delete opts.mimeType; mr = new MediaRecorder(stream, opts); }
+    const r = rec = {mr, stream, track, rc, cfg, manual, chunks:[], fps:REC_FPS, interval:1000/REC_FPS,
+      next:0, timer:0, ui:0, slow:0, frameMs:0, ticks:0, renders:0, t0:Date.now(), stopping:false, done:false};
+    mr.ondataavailable = e=>{ if(e.data && e.data.size) r.chunks.push(e.data); };
+    mr.onerror = e=>{ console.warn('MediaRecorder error', e && e.error || e); showHint('Recording error — saving what was captured', 3200); stopRecording(); };
+    mr.onstop = ()=>finishRecording(r);
+    if(track) track.onended = ()=>stopRecording();
+    mr.start(1000);
+    setRecUI(true); recTimeEl.textContent = '0:00';
+    r.ui = setInterval(()=>{ const s = Math.floor((Date.now()-r.t0)/1000); recTimeEl.textContent = Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }, 500);
+    recDirty = true; r.next = performance.now(); recTick();
+    if(dbg.on) console.info('[rec] config', cfg, {manualRequestFrame: manual});
+    showHint('Recording your whiteboard', 2200);
+  }catch(err){
+    console.warn('startRecording failed', err);
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    if(rc && rc.out){ rc.out.width = rc.out.height = 0; rc.stat.width = rc.stat.height = 0; }
+    rec = null; setRecUI(false);
+    showHint('Could not start recording on this device', 3000);
+  }finally{ recBusy = false; }
+}
+recBtn.addEventListener('click', ()=>{ if(rec) stopRecording(); else startRecording(); });
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && rec) recDirty = true; });
+
+// --- optional diagnostics (off by default): slateDebug(true) in console, or add ?debugrec to the URL ---
+const dbg = {on:false, h:0, t:0, ir:0, rt:0, rr:0};
+function slateDiag(){
+  const now = performance.now(), dt = Math.max(1, now - dbg.t)/1000, r = rec;
+  const out = {interactiveRenderFps: +((diag.iRenders-dbg.ir)/dt).toFixed(1), strokes: state.strokes.length, recording: null};
+  if(r){ out.recording = {state:r.mr.state, size:r.rc.W+'x'+r.rc.H, mime:r.mr.mimeType||r.cfg.mime, caps:r.cfg.caps,
+    requestedBitrate:r.cfg.bps, manualRequestFrame:r.manual, targetFps:r.fps,
+    clockFps:+((r.ticks-dbg.rt)/dt).toFixed(1), composeFps:+((r.renders-dbg.rr)/dt).toFixed(1), composeMs:+r.frameMs.toFixed(2)};
+    dbg.rt = r.ticks; dbg.rr = r.renders; }
+  dbg.t = now; dbg.ir = diag.iRenders; return out;
+}
+window.slateDiag = slateDiag;
+window.slateDebug = (on = true)=>{ dbg.on = !!on; clearInterval(dbg.h); dbg.t = performance.now(); dbg.ir = diag.iRenders;
+  if(dbg.on) dbg.h = setInterval(()=>console.info('[slate]', slateDiag()), 2000); return dbg.on; };
+if(/[?&]debugrec\b/.test(location.search)) window.slateDebug(true);
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', ()=>{ refreshTheme(); drawGrid(); requestRender(); });
+
+// ---------- hint on first load ----------
+function showHint(msg, t=2200){ hint.textContent=msg; hint.classList.add('show'); clearTimeout(showHint._t); showHint._t=setTimeout(()=>hint.classList.remove('show'), t); }
+setTimeout(()=>showHint('Draw anywhere · drag the grip to move the toolbar', 3200), 500);
+
+// ---------- resize ----------
+window.addEventListener('resize', resize);
+resize(); syncSwatches(); updateUndoBtns(); updateZoomLabel(); setPanLockX(true);
+})();
+</script>
+</body>
+</html>
